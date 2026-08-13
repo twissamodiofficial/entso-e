@@ -1,0 +1,13 @@
+entsoe-py
+pandas
+statsmodels
+scikit-learn
+matplotlib
+sktime
+feature-engine
+holidays
+dotenv
+pyarrow
+lightgbm
+seaborn
+requests
