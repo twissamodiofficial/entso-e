@@ -11,3 +11,5 @@ pyarrow
 lightgbm
 seaborn
 requests
+supabase
+joblib

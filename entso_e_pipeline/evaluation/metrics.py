@@ -15,14 +15,13 @@ def mape(y_true, y_pred):
 
 
 def evaluate(y_true: pd.Series, y_pred: pd.Series, label: str = "") -> dict:
-    metrics = {
+    return {
         "label": label,
         "mae": mae(y_true, y_pred),
         "rmse": rmse(y_true, y_pred),
         "mape": mape(y_true, y_pred),
         "n": len(y_true),
     }
-    return metrics
 
 
 def evaluate_by_group(y_true: pd.Series, y_pred: pd.Series, group: pd.Series, group_name: str) -> pd.DataFrame:
@@ -39,19 +38,6 @@ def evaluate_by_group(y_true: pd.Series, y_pred: pd.Series, group: pd.Series, gr
     return pd.DataFrame(rows).sort_values(group_name).reset_index(drop=True)
 
 
-if __name__ == "__main__":
-    val = pd.read_parquet("data/processed/features_weather_val.parquet")
-
-    y_true = val["Actual Load"]
-    y_pred_naive = val["Actual Load_lag_24"]
-
-    overall = evaluate(y_true, y_pred_naive, label="naive_lag24_val")
-    print("Overall (val):")
-    for k, v in overall.items():
+def print_metrics(metrics: dict):
+    for k, v in metrics.items():
         print(f"  {k}: {v:.3f}" if isinstance(v, float) else f"  {k}: {v}")
-
-    print("\nBy hour of day:")
-    print(evaluate_by_group(y_true, y_pred_naive, val["hour"], "hour").to_string(index=False))
-
-    print("\nBy weekday/weekend:")
-    print(evaluate_by_group(y_true, y_pred_naive, val["weekend"], "weekend").to_string(index=False))
