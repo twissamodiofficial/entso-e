@@ -1,0 +1,24 @@
+name: daily-predict
+
+on:
+  workflow_run:
+    workflows: ["daily-ingest"]
+    types: [completed]
+
+jobs:
+  predict:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e . -r requirements.txt
+      - run: python3 scripts/run_predict.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      - name: notify on failure
+        if: failure()
+        run: echo "Predict failed - would send an alert here (Slack/email webhook)"
