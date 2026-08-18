@@ -19,7 +19,7 @@ def upsert_load_actuals(load: pd.DataFrame):
 
 def fetch_load_actuals(start: str = None, end: str = None) -> pd.DataFrame:
     client = _client()
-    query = client.table("load_actuals").select("*")
+    query = client.table("load_actuals").select("*").order("datetime")
     if start:
         query = query.gte("datetime", start)
     if end:
@@ -43,7 +43,7 @@ def upsert_weather(weather: pd.DataFrame, source: str):
 
 def fetch_weather(source: str, start: str = None, end: str = None) -> pd.DataFrame:
     client = _client()
-    query = client.table("weather").select("*").eq("source", source)
+    query = client.table("weather").select("*").eq("source", source).order("datetime")
     if start:
         query = query.gte("datetime", start)
     if end:
@@ -66,7 +66,7 @@ def upsert_forecasts(preds: pd.DataFrame, forecast_made_at: pd.Timestamp):
 
 def fetch_forecasts(start: str = None, end: str = None) -> pd.DataFrame:
     client = _client()
-    query = client.table("forecasts").select("*")
+    query = client.table("forecasts").select("*").order("datetime")
     if start:
         query = query.gte("datetime", start)
     if end:

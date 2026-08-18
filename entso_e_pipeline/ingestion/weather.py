@@ -34,13 +34,13 @@ WEATHER_SPLITS = {
 }
 
 
-def pull_weather(start_date: str, end_date: str, variables: list = None) -> pd.DataFrame:
+def pull_weather(start_date: str, end_date: str, variables: list) -> pd.DataFrame:
     params = {
         "latitude": config.LATITUDE,
         "longitude": config.LONGITUDE,
         "start_date": start_date,
         "end_date": end_date,
-        "hourly": ",".join(variables or HOURLY_VARS),
+        "hourly": ",".join(variables),
         "timezone": config.TIMEZONE,
     }
     resp = requests.get(ARCHIVE_URL, params=params, timeout=60)
@@ -66,7 +66,13 @@ def pull_forecast(days_ahead: int = 2) -> pd.DataFrame:
     data = resp.json()["hourly"]
     df = pd.DataFrame(data)
     df["time"] = pd.to_datetime(df["time"])
-    return df.set_index("time")
+    df = df.set_index("time")
+    df.index = df.index.tz_localize(
+        config.TIMEZONE, nonexistent="shift_forward", ambiguous="NaT"
+    )
+    df = df[df.index.notna()]
+    df = df[~df.index.duplicated(keep="first")]
+    return df
 
 
 def ingest_all(out_dir: str = config.RAW_DIR):
