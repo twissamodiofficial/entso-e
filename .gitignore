@@ -1,7 +1,7 @@
 .venv/
 data/
 __pycache__/
-model/
+models/
 .env
 .DS_Store
 *.egg-info/

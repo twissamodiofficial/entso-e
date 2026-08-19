@@ -1,8 +1,12 @@
+import os
 import sys
 
 from entso_e_pipeline import config, registry
 from entso_e_pipeline.pipeline import ForecastPipeline
 from entso_e_pipeline.evaluation import metrics
+
+os.makedirs(config.PROCESSED_DIR, exist_ok=True)
+os.makedirs(config.MODELS_DIR, exist_ok=True)
 
 pipeline = ForecastPipeline()
 
