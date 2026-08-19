@@ -2,7 +2,7 @@ import sys
 
 import pandas as pd
 
-from entso_e_pipeline import config, storage
+from entso_e_pipeline import config, storage, registry
 from entso_e_pipeline.ingestion.weather import pull_forecast
 from entso_e_pipeline.pipeline import ForecastPipeline
 
@@ -42,6 +42,8 @@ def build_prediction_features(load_history: pd.DataFrame, weather_forecast: pd.D
 
 if __name__ == "__main__":
     try:
+        registry.pull_latest_artifacts()
+
         window_start = (pd.Timestamp.now(tz=config.TIMEZONE) - pd.Timedelta(hours=config.WARMUP_HOURS + 24)).strftime("%Y-%m-%d")
         load_history = storage.fetch_load_actuals(start=window_start)
         if load_history.empty:

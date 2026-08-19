@@ -19,6 +19,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_USER_TOKEN }}
       - name: notify on failure
         if: failure()
         run: echo "Predict failed - would send an alert here (Slack/email webhook)"

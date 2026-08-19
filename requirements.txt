@@ -13,3 +13,5 @@ seaborn
 requests
 supabase
 joblib
+dagshub
+mlflow
