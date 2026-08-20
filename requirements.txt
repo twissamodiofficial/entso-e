@@ -6,7 +6,7 @@ matplotlib
 sktime
 feature-engine
 holidays
-dotenv
+python-dotenv
 pyarrow
 lightgbm
 seaborn

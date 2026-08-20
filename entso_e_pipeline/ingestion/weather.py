@@ -6,24 +6,6 @@ import requests
 
 from .. import config
 
-HOURLY_VARS = [
-    "temperature_2m",
-    "apparent_temperature",
-    "relative_humidity_2m",
-    "dew_point_2m",
-    "precipitation",
-    "rain",
-    "snowfall",
-    "snow_depth",
-    "cloud_cover",
-    "shortwave_radiation",
-    "direct_radiation",
-    "diffuse_radiation",
-    "wind_speed_10m",
-    "wind_gusts_10m",
-    "surface_pressure",
-]
-
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 
@@ -52,8 +34,7 @@ def pull_weather(start_date: str, end_date: str, variables: list) -> pd.DataFram
 
 
 def pull_forecast(days_ahead: int = 2) -> pd.DataFrame:
-    """Live weather forecast for the upcoming period which is used at prediction
-    time, NOT training time since actuals that don't exist yet."""
+    """ used at prediction time"""
     params = {
         "latitude": config.LATITUDE,
         "longitude": config.LONGITUDE,

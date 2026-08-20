@@ -3,7 +3,7 @@ import pandas as pd
 from entso_e_pipeline import config
 from entso_e_pipeline.pipeline import ForecastPipeline
 from entso_e_pipeline.evaluation import metrics
-from entso_e_pipeline.modeling import calibration
+from entso_e_pipeline.modeling import calibration, quantile
 
 pipeline = ForecastPipeline()
 pipeline.load_features()
@@ -22,6 +22,12 @@ print(metrics.evaluate_by_group(test_df[config.TARGET], preds["point_pred"], tes
 
 print("\nBy weekday/weekend:")
 print(metrics.evaluate_by_group(test_df[config.TARGET], preds["point_pred"], test_df["weekend"], "weekend").to_string(index=False))
+
+print("\nPinball loss per quantile (test):")
+quantile_preds = quantile.predict_all(pipeline.quantile_models, test_df)
+for q in config.QUANTILES:
+    loss = quantile.pinball_loss(test_df[config.TARGET], quantile_preds[q], q)
+    print(f"  q{q}: {loss:.3f}")
 
 cov_raw = calibration.coverage(test_df[config.TARGET], preds["q10"], preds["q90"])
 cov_calibrated = calibration.coverage(test_df[config.TARGET], preds["q10_calibrated"], preds["q90_calibrated"])

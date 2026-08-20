@@ -50,14 +50,6 @@ def predict(model: lgb.Booster, df: pd.DataFrame) -> pd.Series:
 def predict_all(models: dict, df: pd.DataFrame) -> dict:
     return {q: predict(m, df) for q, m in models.items()}
 
-
-def crossing_counts(preds: dict) -> dict:
-    return {
-        "q0.1_gt_q0.5": int((preds[0.1] > preds[0.5]).sum()),
-        "q0.5_gt_q0.9": int((preds[0.5] > preds[0.9]).sum()),
-    }
-
-
 def save(models: dict, models_dir: str = config.MODELS_DIR):
     for q, model in models.items():
         model.save_model(f"{models_dir}/lightgbm_q{q}.txt")

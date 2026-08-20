@@ -6,7 +6,7 @@ from entso_e_pipeline import config, storage
 from entso_e_pipeline.ingestion.load import _client as entsoe_client
 from entso_e_pipeline.ingestion.weather import pull_weather
 from entso_e_pipeline.evaluation import metrics
-from entso_e_pipeline.modeling import calibration
+from entso_e_pipeline.modeling import calibration, quantile
 
 
 def fetch_yesterday_load() -> pd.DataFrame:
@@ -47,6 +47,9 @@ def score_yesterday(yesterday_load: pd.DataFrame):
         "rmse": float(metrics.rmse(y_true, joined["point_pred"])),
         "mape": float(metrics.mape(y_true, joined["point_pred"])),
         "coverage": float(calibration.coverage(y_true, joined["q10_calibrated"], joined["q90_calibrated"])),
+        "pinball_q10": float(quantile.pinball_loss(y_true, joined["q10"], 0.1)),
+        "pinball_q50": float(quantile.pinball_loss(y_true, joined["q50"], 0.5)),
+        "pinball_q90": float(quantile.pinball_loss(y_true, joined["q90"], 0.9)),
         "n_hours": len(joined),
     }
     storage.upsert_daily_metrics(row)

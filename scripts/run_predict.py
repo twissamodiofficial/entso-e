@@ -44,8 +44,8 @@ if __name__ == "__main__":
     try:
         registry.pull_latest_artifacts()
 
-        window_start = (pd.Timestamp.now(tz=config.TIMEZONE) - pd.Timedelta(hours=config.WARMUP_HOURS + 24)).strftime("%Y-%m-%d")
-        load_history = storage.fetch_load_actuals(start=window_start)
+        window_start = pd.Timestamp.now(tz=config.TIMEZONE) - pd.Timedelta(hours=config.WARMUP_HOURS + 24)
+        load_history = storage.fetch_load_actuals(start=str(window_start))
         if load_history.empty:
             raise RuntimeError("No actuals in Supabase - has run_ingest.py run at least once?")
 
