@@ -18,9 +18,9 @@ def fetch_yesterday_load() -> pd.DataFrame:
 
 
 def fetch_yesterday_weather() -> pd.DataFrame:
-    end = pd.Timestamp.now(tz=config.TIMEZONE).normalize()
-    start = end - pd.Timedelta(days=1)
-    return pull_weather(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"), variables=config.WEATHER_FEATURES)
+    yesterday = pd.Timestamp.now(tz=config.TIMEZONE).normalize() - pd.Timedelta(days=1)
+    day_str = yesterday.strftime("%Y-%m-%d")
+    return pull_weather(day_str, day_str, variables=config.WEATHER_FEATURES)
 
 
 def score_yesterday(yesterday_load: pd.DataFrame):
@@ -56,13 +56,17 @@ def score_yesterday(yesterday_load: pd.DataFrame):
 if __name__ == "__main__":
     try:
         yesterday_load = fetch_yesterday_load()
-        yesterday_weather = fetch_yesterday_weather()
-
         storage.upsert_load_actuals(yesterday_load)
-        storage.upsert_weather(yesterday_weather, source="actual")
         score_yesterday(yesterday_load)
     except Exception as e:
         print(f"INGEST FAILED: {e}")
         sys.exit(1)
 
-    print(f"Ingest OK: {len(yesterday_load)} load rows, {len(yesterday_weather)} weather rows")
+    try:
+        yesterday_weather = fetch_yesterday_weather()
+        storage.upsert_weather(yesterday_weather, source="actual")
+        print(f"Weather: {len(yesterday_weather)} rows stored")
+    except Exception as e:
+        print(f"Weather fetch failed (non-critical, skipping): {e}")
+
+    print(f"Ingest OK: {len(yesterday_load)} load rows")
