@@ -15,7 +15,23 @@ def _client():
     return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
 
 
+def _to_utc_z(value) -> str:
+    """Format any timestamp-like value as UTC with a 'Z' suffix, never a
+    '+HH:MM' offset - a '+' in a query string can get silently mangled
+    (decoded as a space) by the HTTP layer, causing Supabase filters to
+    match almost nothing instead of erroring. Always use this for any
+    .gte()/.lte() timestamp filter value."""
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize(config.TIMEZONE)
+    return ts.tz_convert("UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _paginated_fetch(query_builder):
+    """query_builder is a callable that takes (client) and returns a
+    fresh, unexecuted query (select + filters + order), so we can attach
+    .range() per page and re-issue it. Loops until a page comes back
+    with fewer than PAGE_SIZE rows."""
     client = _client()
     all_rows = []
     offset = 0
@@ -41,9 +57,9 @@ def fetch_load_actuals(start: str = None, end: str = None) -> pd.DataFrame:
     def build(client):
         q = client.table("load_actuals").select("*").order("datetime")
         if start:
-            q = q.gte("datetime", start)
+            q = q.gte("datetime", _to_utc_z(start))
         if end:
-            q = q.lte("datetime", end)
+            q = q.lte("datetime", _to_utc_z(end))
         return q
 
     data = _paginated_fetch(build)
@@ -67,9 +83,9 @@ def fetch_weather(source: str, start: str = None, end: str = None) -> pd.DataFra
     def build(client):
         q = client.table("weather").select("*").eq("source", source).order("datetime")
         if start:
-            q = q.gte("datetime", start)
+            q = q.gte("datetime", _to_utc_z(start))
         if end:
-            q = q.lte("datetime", end)
+            q = q.lte("datetime", _to_utc_z(end))
         return q
 
     data = _paginated_fetch(build)
@@ -92,9 +108,9 @@ def fetch_forecasts(start: str = None, end: str = None) -> pd.DataFrame:
     def build(client):
         q = client.table("forecasts").select("*").order("datetime")
         if start:
-            q = q.gte("datetime", start)
+            q = q.gte("datetime", _to_utc_z(start))
         if end:
-            q = q.lte("datetime", end)
+            q = q.lte("datetime", _to_utc_z(end))
         return q
 
     data = _paginated_fetch(build)
