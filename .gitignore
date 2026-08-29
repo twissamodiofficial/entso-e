@@ -5,3 +5,4 @@ models/
 .env
 .DS_Store
 *.egg-info/
+scripts/tests/
