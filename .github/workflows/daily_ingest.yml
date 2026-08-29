@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e . -r requirements.txt
-      - run: python3 scripts/run_ingest.py
+      - run: python3 scripts/run_daily_ingest.py
         env:
           ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

@@ -46,6 +46,36 @@ def _paginated_fetch(query_builder):
     return all_rows
 
 
+def latest_load_actuals_datetime():
+    client = _client()
+    result = (
+        client.table("load_actuals")
+        .select("datetime")
+        .order("datetime", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        return None
+    return pd.to_datetime(result.data[0]["datetime"]).tz_convert(config.TIMEZONE)
+
+
+def latest_weather_datetime(source: str):
+    """source ('actual' or 'forecast')."""
+    client = _client()
+    result = (
+        client.table("weather")
+        .select("datetime")
+        .eq("source", source)
+        .order("datetime", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        return None
+    return pd.to_datetime(result.data[0]["datetime"]).tz_convert(config.TIMEZONE)
+
+
 def upsert_load_actuals(load: pd.DataFrame):
     client = _client()
     rows = load.reset_index().rename(columns={"index": "datetime", "Actual Load": "actual_load"})

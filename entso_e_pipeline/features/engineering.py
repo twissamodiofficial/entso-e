@@ -51,6 +51,16 @@ def _add_holiday_and_cast(features: pd.DataFrame) -> pd.DataFrame:
 
     return features
 
+def _build_feature_frame(stitched: pd.DataFrame, ws: WindowSummarizer, dtf: DatetimeFeatures) -> pd.DataFrame:
+    """Core feature construction shared by every caller (train/val/test/live).
+    No assumption about whether TARGET is real or a placeholder - callers
+    decide what to do with that column and whether/how to drop NaNs."""
+    df_ws = ws.transform(stitched)
+    df_dtf = dtf.transform(df_ws)
+    features = pd.concat([df_dtf, stitched], axis=1)
+    return _add_holiday_and_cast(features)
+
+
 def fit_transform_train(load_train: pd.DataFrame, weather_train: pd.DataFrame = None):
     ws, dtf = make_transformers()
     df_ws = ws.fit_transform(load_train)
@@ -65,17 +75,44 @@ def fit_transform_train(load_train: pd.DataFrame, weather_train: pd.DataFrame = 
 def transform(load_split: pd.DataFrame, ws: WindowSummarizer, dtf: DatetimeFeatures,
                load_prior: pd.DataFrame = None,
                weather_split: pd.DataFrame = None) -> pd.DataFrame:
+    """train/val/test: TARGET is known and real. A missing TARGET here means
+    an actual gap in the data, so dropna() after the weather join is correct -
+    it drops rows that genuinely can't be scored/trained on."""
     if load_prior is not None:
         stitched = pd.concat([load_prior.tail(config.WARMUP_HOURS), load_split])
     else:
         stitched = load_split
 
-    df_ws = ws.transform(stitched)
-    df_dtf = dtf.transform(df_ws)
-    features = pd.concat([df_dtf, stitched], axis=1)
-    features = _add_holiday_and_cast(features)
+    features = _build_feature_frame(stitched, ws, dtf)
     features = features.loc[features.index >= load_split.index.min()]
 
     if weather_split is not None:
         features = pd.concat([features, weather_split], axis=1).dropna()
     return features
+
+
+def transform_future(load_history: pd.DataFrame, horizon: pd.DatetimeIndex,
+                      ws: WindowSummarizer, dtf: DatetimeFeatures,
+                      weather_forecast: pd.DataFrame) -> pd.DataFrame:
+    """Live prediction: TARGET doesn't exist yet for `horizon`, by definition -
+    there is nothing to fabricate and nothing to drop it for. Lag/rolling
+    features only ever look backward (they pull from load_history), so the
+    NaN TARGET placeholder for the horizon rows is never used as an input;
+    it just needs to be there so `stitched` has the right shape to run
+    through the same _build_feature_frame() every other split uses -
+    guaranteeing identical dtypes/categories/columns as train/val/test."""
+    if len(load_history) < config.WARMUP_HOURS:
+        raise ValueError(
+            f"Need at least {config.WARMUP_HOURS} hours of load history to build "
+            f"lag features, got {len(load_history)}."
+        )
+
+    placeholder = pd.DataFrame(index=horizon, columns=[config.TARGET], dtype=float)
+    stitched = pd.concat([load_history.tail(config.WARMUP_HOURS), placeholder])
+
+    features = _build_feature_frame(stitched, ws, dtf)
+    features = features.loc[horizon].drop(columns=[config.TARGET])
+
+    weather_target = weather_forecast.reindex(horizon)
+    features = pd.concat([features, weather_target], axis=1)
+    return features.dropna()

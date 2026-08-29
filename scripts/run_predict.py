@@ -3,6 +3,7 @@ import sys
 import pandas as pd
 
 from entso_e_pipeline import config, storage, registry
+from entso_e_pipeline.features import engineering
 from entso_e_pipeline.ingestion.weather import pull_forecast
 from entso_e_pipeline.pipeline import ForecastPipeline
 
@@ -13,31 +14,14 @@ def build_prediction_features(load_history: pd.DataFrame, weather_forecast: pd.D
     target_start = origin + pd.Timedelta(hours=1)
     target_hours = pd.date_range(target_start, periods=24, freq="h", tz=config.TIMEZONE)
 
-    future = pd.DataFrame(index=target_hours, columns=[config.TARGET], dtype=float)
-    stitched = pd.concat([load_history.tail(config.WARMUP_HOURS), future])
+    features = engineering.transform_future(load_history, target_hours, ws, dtf, weather_forecast)
 
-    df_ws = ws.transform(stitched)
-    df_dtf = dtf.transform(df_ws)
-    features = pd.concat([df_dtf, stitched], axis=1)
-    features = features.reindex(target_hours)
+    missing_hours = target_hours.difference(features.index)
+    if len(missing_hours) > 0:
+        print(f"WARNING: dropping {len(missing_hours)} hour(s) with missing weather forecast: "
+              f"{list(missing_hours)}")
 
-    if features.isna().any().any():
-        print("WARNING: missing values before holiday/weather join:")
-        print(features.isna().sum()[features.isna().sum() > 0])
-
-    features["is_holiday"] = [int(d in config.COUNTRY_HOLIDAYS) for d in features.index.date]
-    features["holiday_name"] = [config.COUNTRY_HOLIDAYS.get(d, "none") for d in features.index.date]
-    for col in config.CATEGORICAL_FEATURES:
-        features[col] = features[col].astype("category")
-
-    weather_target = weather_forecast.reindex(target_hours)
-    features = pd.concat([features.drop(columns=[config.TARGET]), weather_target], axis=1)
-
-    if features.isna().any().any():
-        print("WARNING: dropping rows with missing values (likely weather forecast gaps):")
-        print(features[features.isna().any(axis=1)])
-
-    return features.dropna()
+    return features
 
 
 if __name__ == "__main__":
@@ -47,7 +31,7 @@ if __name__ == "__main__":
         window_start = pd.Timestamp.now(tz=config.TIMEZONE) - pd.Timedelta(hours=config.WARMUP_HOURS + 24)
         load_history = storage.fetch_load_actuals(start=str(window_start))
         if load_history.empty:
-            raise RuntimeError("No actuals in Supabase - has run_ingest.py run at least once?")
+            raise RuntimeError("No actuals in Supabase - has run_daily_ingest.py run at least once?")
 
         weather_forecast = pull_forecast(days_ahead=2)
 
