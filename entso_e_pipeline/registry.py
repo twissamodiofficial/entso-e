@@ -20,9 +20,6 @@ def _setup():
 
 
 def log_run(metrics: dict, params: dict = None):
-    """Log everything currently in config.MODELS_DIR (models + transformers
-    + cqr_q, whatever save_models() just wrote) as one MLflow run's
-    artifacts, plus the val metrics for tracking over time."""
     _setup()
     with mlflow.start_run():
         if params:
@@ -35,10 +32,6 @@ def log_run(metrics: dict, params: dict = None):
 
 
 def pull_latest_artifacts():
-    """Download the most recent run's artifacts into config.MODELS_DIR,
-    so point.load()/quantile.load_all()/pipeline.load_transformers() work
-    unchanged — this is what CI calls before predicting, since it starts
-    with no local models/ directory."""
     _setup()
     client = mlflow.MlflowClient()
     experiment = client.get_experiment_by_name(EXPERIMENT_NAME)

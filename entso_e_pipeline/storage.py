@@ -16,11 +16,7 @@ def _client():
 
 
 def _to_utc_z(value) -> str:
-    """Format any timestamp-like value as UTC with a 'Z' suffix, never a
-    '+HH:MM' offset - a '+' in a query string can get silently mangled
-    (decoded as a space) by the HTTP layer, causing Supabase filters to
-    match almost nothing instead of erroring. Always use this for any
-    .gte()/.lte() timestamp filter value."""
+    # Format any timestamp-like value as UTC with a 'Z' suffix, e.g. '2023-01-01T00:00:00Z'.
     ts = pd.Timestamp(value)
     if ts.tzinfo is None:
         ts = ts.tz_localize(config.TIMEZONE)
@@ -28,10 +24,6 @@ def _to_utc_z(value) -> str:
 
 
 def _paginated_fetch(query_builder):
-    """query_builder is a callable that takes (client) and returns a
-    fresh, unexecuted query (select + filters + order), so we can attach
-    .range() per page and re-issue it. Loops until a page comes back
-    with fewer than PAGE_SIZE rows."""
     client = _client()
     all_rows = []
     offset = 0

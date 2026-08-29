@@ -1,19 +1,5 @@
 """
-bootstrap_live_store.py
-
-Cold-starts (or catches up) Supabase's live store (load_actuals, weather)
-so the daily loop (run_daily_ingest.py -> run_predict.py) has enough
-history to compute lag features on its first run.
-
-Watermark-driven, not date-driven: reads the latest datetime already in
-Supabase and backfills from there (or from the end of config.SPLITS["test"]
-if Supabase is empty) through yesterday. This makes it idempotent and safe
-to rerun - if it fails partway, or you run it twice by accident, it just
-picks up wherever it left off instead of re-pulling months of data or
-requiring you to remember not to run it again.
-
-Run this once before the daily GitHub Actions workflows are enabled, or
-any time the live store falls behind (e.g. after the daily cron was paused).
+Cold-starts (or catches up) Supabase's live store with actual load and weather data, starting from the last known timestamp
 """
 import sys
 
