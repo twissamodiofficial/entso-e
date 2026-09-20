@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "entso-e"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "entsoe-py",
+    "holidays",
+    "lightgbm",
+    "dagshub",
+    "mlflow>=2.0",
+    "numpy",
+    "pandas",
+    "python-dotenv",
+    "requests",
+    "supabase>=2.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["entso_e*"]

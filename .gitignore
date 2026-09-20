@@ -1,0 +1,12 @@
+.venv/
+node_modules/
+dashboard/.next/
+data/
+__pycache__/
+models/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.egg-info/
+scripts/tests/
