@@ -1,0 +1,62 @@
+name: Live load forecast
+
+on:
+  workflow_dispatch:
+    inputs:
+      forecast_date:
+        description: "Amsterdam forecast date (YYYY-MM-DD); blank means today"
+        required: false
+        type: string
+  schedule:
+    # Start shortly after Amsterdam midnight; the job retries while actuals settle.
+    - cron: "15 0 * * *"
+      timezone: "Europe/Amsterdam"
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      ENTSOE_API_KEY: ${{ secrets.ENTSOE_API_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      DAGSHUB_REPO: twissamodiofficial/entso-e
+      DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_USER_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pipeline
+        run: python -m pip install --upgrade pip && python -m pip install -e .
+
+      - name: Reconcile previous forecast
+        continue-on-error: true
+        run: python -m entso_e_pipeline.online.reconcile
+
+      - name: Generate today’s Amsterdam forecast
+        env:
+          FORECAST_DATE: ${{ inputs.forecast_date }}
+        run: |
+          max_attempts=8
+          retry_seconds=1800
+
+          for attempt in $(seq 1 "$max_attempts"); do
+            if [ -n "$FORECAST_DATE" ]; then
+              python -m entso_e_pipeline.online.forecast --forecast-date "$FORECAST_DATE" && exit 0
+            else
+              python -m entso_e_pipeline.online.forecast && exit 0
+            fi
+
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              exit 1
+            fi
+            echo "Forecast attempt $attempt failed; retrying in ${retry_seconds}s"
+            sleep "$retry_seconds"
+          done
