@@ -24,6 +24,7 @@ def _window(frame: pd.DataFrame, start, end) -> pd.DataFrame:
 def build_splits(
     store: SupabaseRawStore | None = None,
     feature_version: str = config.FEATURE_VERSION,
+    split_definition: dict | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Read versioned model features from the canonical Supabase store."""
 
@@ -34,16 +35,19 @@ def build_splits(
             "No materialized Supabase features found. "
             "Run offline.materialize first."
         )
-    return _validated_splits(frame)
+    return _validated_splits(frame, split_definition or config.SPLITS)
 
 
-def _validated_splits(frame: pd.DataFrame) -> dict[str, pd.DataFrame]:
+def _validated_splits(
+    frame: pd.DataFrame,
+    split_definition: dict,
+) -> dict[str, pd.DataFrame]:
     splits = {
         name: pd.concat([
             _window(frame, start, end)
             for start, end in windows
         ])
-        for name, windows in config.SPLITS.items()
+        for name, windows in split_definition.items()
     }
     validate_temporal_splits(splits)
     for name, split in splits.items():
@@ -51,16 +55,13 @@ def _validated_splits(frame: pd.DataFrame) -> dict[str, pd.DataFrame]:
     return splits
 
 
-def train_historical_models(
+def select_training_rounds(
     splits: dict[str, pd.DataFrame],
 ) -> dict[str, object]:
-    """Select rounds on train/validation and refit on their combined rows."""
+    """Select point and quantile boosting rounds on the historical val split."""
 
-    train = splits["train"]
-    validation = splits["val"]
-    selected_point = point.train(train, validation)
-    selected_quantiles = quantile.train_all(train, validation)
-
+    selected_point = point.train(splits["train"], splits["val"])
+    selected_quantiles = quantile.train_all(splits["train"], splits["val"])
     rounds = {
         "point": selected_point.best_iteration,
         "quantile": {
@@ -68,18 +69,39 @@ def train_historical_models(
             for quantile_level, model in selected_quantiles.items()
         },
     }
-    combined = pd.concat([train, validation])
-    point_model = point.train(combined, num_boost_round=rounds["point"])
-    quantile_models = quantile.train_all(
-        combined,
-        num_boost_round=rounds["quantile"],
-    )
     return {
         "selected_point": selected_point,
         "selected_quantiles": selected_quantiles,
-        "point": point_model,
-        "quantiles": quantile_models,
         "rounds": rounds,
+    }
+
+
+def fit_fixed_models(
+    train: pd.DataFrame,
+    rounds: dict[str, object],
+) -> dict[str, object]:
+    """Fit final models on a chosen training window with fixed selected rounds."""
+
+    return {
+        "point": point.train(train, num_boost_round=rounds["point"]),
+        "quantiles": quantile.train_all(
+            train,
+            num_boost_round=rounds["quantile"],
+        ),
+    }
+
+
+def train_historical_models(
+    splits: dict[str, pd.DataFrame],
+) -> dict[str, object]:
+    """Select rounds on train/validation and refit on their combined rows."""
+
+    selection = select_training_rounds(splits)
+    combined = pd.concat([splits["train"], splits["val"]])
+    final = fit_fixed_models(combined, selection["rounds"])
+    return {
+        **selection,
+        **final,
     }
 
 
@@ -177,7 +199,16 @@ def save_calibration(
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--models-dir", default=config.MODELS_DIR)
+    parser.add_argument(
+        "--profile",
+        choices=("historical", "production"),
+        default="historical",
+        help="Historical evaluation workflow or production refit through June 30.",
+    )
+    parser.add_argument(
+        "--models-dir",
+        help="Output directory; production defaults to models/production.",
+    )
     parser.add_argument(
         "--publish-dagshub",
         action="store_true",
@@ -186,23 +217,34 @@ def main(argv=None):
     parser.add_argument("--model-version")
     args = parser.parse_args(argv)
 
-    splits = build_splits()
-    models = train_historical_models(splits)
+    historical_splits = build_splits()
+    selection = select_training_rounds(historical_splits)
     selected = {
-        "point": models["selected_point"],
-        "quantiles": models["selected_quantiles"],
+        "point": selection["selected_point"],
+        "quantiles": selection["selected_quantiles"],
     }
-    final = {
-        "point": models["point"],
-        "quantiles": models["quantiles"],
-    }
-    interval_calibration = calibrate_interval(final, splits["calibration"])
-    save_models(final["point"], final["quantiles"], args.models_dir)
-    save_calibration(interval_calibration, args.models_dir)
-    report = {
-        "models_dir": args.models_dir,
-        "rounds": models["rounds"],
-        "metrics": {
+    if args.profile == "production":
+        splits = build_splits(split_definition=config.PRODUCTION_SPLITS)
+        final = fit_fixed_models(splits["train"], selection["rounds"])
+        interval_calibration = calibrate_interval(final, splits["calibration"])
+        metrics_report = {
+            "validation_selection": evaluate_models(selected, historical_splits["val"]),
+            "production_calibration": {
+                **evaluate_models(final, splits["calibration"]),
+                "interval": interval_calibration,
+            },
+        }
+        training_window = {"start": "2019-01-01", "end": "2026-07-01"}
+        calibration_window = {"start": "2026-07-01", "end": "2026-09-16"}
+        default_models_dir = str(Path(config.MODELS_DIR) / "production")
+    else:
+        splits = historical_splits
+        final = fit_fixed_models(
+            pd.concat([splits["train"], splits["val"]]),
+            selection["rounds"],
+        )
+        interval_calibration = calibrate_interval(final, splits["calibration"])
+        metrics_report = {
             "validation_selection": evaluate_models(selected, splits["val"]),
             "calibration": {
                 **evaluate_models(final, splits["calibration"]),
@@ -216,19 +258,33 @@ def main(argv=None):
                     interval_calibration["adjustment_mw"],
                 ),
             },
-        },
+        }
+        training_window = {"start": "2019-01-01", "end": "2026-04-01"}
+        calibration_window = {"start": "2026-04-01", "end": "2026-07-01"}
+        default_models_dir = config.MODELS_DIR
+
+    models_dir = args.models_dir or default_models_dir
+    save_models(final["point"], final["quantiles"], models_dir)
+    save_calibration(interval_calibration, models_dir)
+    report = {
+        "profile": args.profile,
+        "models_dir": models_dir,
+        "training_window": training_window,
+        "calibration_window": calibration_window,
+        "rounds": selection["rounds"],
+        "metrics": metrics_report,
     }
     if args.publish_dagshub:
         from ..serving.model import publish_dagshub_model
 
         model_version = args.model_version or (
-            "load-forecast-"
+            f"load-forecast-{args.profile}-"
             + pd.Timestamp.now(tz="UTC").strftime("%Y%m%dT%H%M%SZ")
         )
         report["model"] = publish_dagshub_model(
-            args.models_dir,
+            models_dir,
             model_version,
-            training_rounds=models["rounds"],
+            training_rounds=selection["rounds"],
             training_metrics=report["metrics"],
             store=SupabaseRawStore(),
         )

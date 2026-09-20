@@ -207,6 +207,21 @@ interval is widened using calibration only, then evaluated on untouched test
 data. `PRODUCTION_SPLITS` describes a later fit through June with
 July–September calibration.
 
+The historical model remains available under `models/`. To create the separate
+production bundle, refit through June 30, and publish that bundle to DagsHub
+without overwriting the historical files, run:
+
+```sh
+python3 -m entso_e_pipeline.offline.train \
+  --profile production \
+  --publish-dagshub
+```
+
+Production defaults to `models/production/` and uses the historical
+train/validation split only to select boosting rounds. It then refits on all
+training rows through `2026-06-30` and calibrates the interval on the
+July–September production calibration window.
+
 To compare the saved point model with ENTSO-E's point forecast on the same test
 window, run the local-only benchmark:
 
