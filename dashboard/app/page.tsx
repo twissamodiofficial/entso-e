@@ -26,7 +26,7 @@ export default async function Home() {
       <section className="cards" aria-label="Forecast summary">
         <article className="card"><span>Forecast date</span><strong>{data.forecastDate}</strong></article>
         <article className="card"><span>Model</span><strong className="small">{data.modelVersion}</strong></article>
-        <article className="card"><span>Latest daily MAPE</span><strong>{latestMetric?.point_mape_percent == null ? '—' : `${percent.format(latestMetric.point_mape_percent)}%`}</strong></article>
+        <article className="card"><span>Latest completed-day MAPE</span><strong>{latestMetric?.point_mape_percent == null ? '—' : `${percent.format(latestMetric.point_mape_percent)}%`}</strong></article>
         <article className="card"><span>Interval coverage</span><strong>{latestCoverage == null ? '—' : `${percent.format(latestCoverage * 100)}%`}</strong></article>
       </section>
 
