@@ -355,7 +355,12 @@ class SupabaseRawStore:
             ):
                 if column in metrics.columns:
                     value = values[column]
-                    row[column] = None if pd.isna(value) else float(value)
+                    if pd.isna(value):
+                        row[column] = None
+                    elif column == "evaluated_rows":
+                        row[column] = int(value)
+                    else:
+                        row[column] = float(value)
             rows.append(row)
         return self._upsert(
             "forecast_daily_metrics",

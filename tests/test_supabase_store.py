@@ -71,6 +71,23 @@ class SupabaseStoreTests(unittest.TestCase):
         self.assertEqual(str(frame.index.tz), config.TIMEZONE)
         self.assertEqual(frame.index.name, "time")
 
+    def test_daily_metrics_store_row_count_as_integer(self):
+        metrics = pd.DataFrame(
+            {
+                "evaluated_rows": [24],
+                "point_mae_mw": [100.5],
+                "point_mape_percent": [2.5],
+            },
+            index=pd.Index(["2026-09-20"], name="valid_date"),
+        )
+
+        self.assertEqual(self.store.upsert_daily_metrics("run-1", metrics), 1)
+
+        row = self.table.upsert.call_args.args[0][0]
+        self.assertEqual(row["evaluated_rows"], 24)
+        self.assertIsInstance(row["evaluated_rows"], int)
+        self.assertEqual(row["point_mae_mw"], 100.5)
+
 
 if __name__ == "__main__":
     unittest.main()
