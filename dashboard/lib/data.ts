@@ -77,13 +77,16 @@ export async function getDashboardData(): Promise<DashboardData> {
       .in('run_id', runIds)
       .order('valid_at', { ascending: true })
     : Promise.resolve({ data: [], error: null })
+  const metricsQuery = runIds.length
+    ? supabase
+      .from('forecast_daily_metrics')
+      .select('run_id, valid_date, evaluated_rows, point_mae_mw, point_mape_percent, interval_coverage')
+      .in('run_id', runIds)
+      .order('valid_date', { ascending: false })
+    : Promise.resolve({ data: [], error: null })
   const [{ data: forecast, error: forecastError }, { data: dailyMetrics, error: metricsError }] = await Promise.all([
     forecastQuery,
-    supabase
-      .from('forecast_daily_metrics')
-      .select('valid_date, evaluated_rows, point_mae_mw, point_mape_percent, interval_coverage')
-      .order('valid_date', { ascending: false })
-      .limit(365),
+    metricsQuery,
   ])
 
   if (forecastError) throw new Error(forecastError.message)
@@ -98,6 +101,6 @@ export async function getDashboardData(): Promise<DashboardData> {
       ...item,
       forecast_date: dateByRun.get(run_id) ?? '',
     })) as ForecastPoint[],
-    dailyMetrics: (dailyMetrics ?? []) as DailyMetric[],
+    dailyMetrics: (dailyMetrics ?? []).map(({ run_id, ...item }) => item) as DailyMetric[],
   }
 }
