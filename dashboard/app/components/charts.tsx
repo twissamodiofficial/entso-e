@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { DailyMetric, ForecastPoint } from '../../lib/data'
+import { ChartRange, dateBounds, dateInRange, localDate, rangeLabel, todayInAmsterdam } from './range'
 
 const chartWidth = 960
 const chartHeight = 350
@@ -41,26 +42,6 @@ function formatTime(value: string) {
   }).format(new Date(value))
 }
 
-function localDate(value: string) {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Amsterdam',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(value))
-  return `${parts.find((part) => part.type === 'year')?.value}-${parts.find((part) => part.type === 'month')?.value}-${parts.find((part) => part.type === 'day')?.value}`
-}
-
-function todayInAmsterdam() {
-  return localDate(new Date().toISOString())
-}
-
-function subtractDays(date: string, days: number) {
-  const value = new Date(`${date}T00:00:00Z`)
-  value.setUTCDate(value.getUTCDate() - days)
-  return value.toISOString().slice(0, 10)
-}
-
 function ChartAxis({ min, max }: { min: number; max: number }) {
   const ticks = Array.from({ length: 5 }, (_, index) => max - ((max - min) * index) / 4)
   return <>
@@ -75,27 +56,29 @@ function ChartAxis({ min, max }: { min: number; max: number }) {
   </>
 }
 
-export default function Charts({ forecast, dailyMetrics }: { forecast: ForecastPoint[]; dailyMetrics: DailyMetric[] }) {
-  const [range, setRange] = useState('30')
+export default function Charts({
+  forecast,
+  dailyMetrics,
+  range,
+  onRangeChange,
+}: {
+  forecast: ForecastPoint[]
+  dailyMetrics: DailyMetric[]
+  range: ChartRange
+  onRangeChange: (range: ChartRange) => void
+}) {
   const [hovered, setHovered] = useState<number | null>(null)
   const today = todayInAmsterdam()
 
-  const selectedDates = useMemo(() => {
-    if (range === 'all') return null
-    const end = today
-    const days = range === 'today' ? 1 : Number(range)
-    return { start: subtractDays(end, days - 1), end }
-  }, [range, today])
-
-  const inRange = (date: string) => !selectedDates || (date >= selectedDates.start && date <= selectedDates.end)
+  const selectedDates = useMemo(() => dateBounds(range, today), [range, today])
 
   const filteredForecast = useMemo(
-    () => forecast.filter((row) => inRange(row.forecast_date || localDate(row.valid_at))),
+    () => forecast.filter((row) => dateInRange(row.forecast_date || localDate(row.valid_at), selectedDates)),
     [forecast, selectedDates],
   )
 
   const filteredMetrics = useMemo(
-    () => [...dailyMetrics].filter((row) => inRange(row.valid_date)).reverse(),
+    () => [...dailyMetrics].filter((row) => dateInRange(row.valid_date, selectedDates)).reverse(),
     [dailyMetrics, selectedDates],
   )
 
@@ -110,12 +93,12 @@ export default function Charts({ forecast, dailyMetrics }: { forecast: ForecastP
   const max = rawMax * 1.02
   const maxMape = Math.max(...filteredMetrics.map((row) => row.point_mape_percent ?? 0), 1)
   const hoveredRow = hovered == null ? null : filteredForecast[hovered]
-  const rangeLabel = range === 'today' ? 'Today' : range === 'all' ? 'All available dates' : `Last ${range} days`
+  const selectedRangeLabel = rangeLabel(range)
 
   return <div className="charts">
     <div className="range-heading">
-      <div><strong>{rangeLabel}</strong><span> · Amsterdam local dates</span></div>
-      <label>Range <select value={range} onChange={(event) => setRange(event.target.value)} aria-label="Chart date range">
+      <div><strong>{selectedRangeLabel}</strong><span> · Amsterdam local dates</span></div>
+      <label>Range <select value={range} onChange={(event) => onRangeChange(event.target.value as ChartRange)} aria-label="Chart date range">
         <option value="today">Today</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="all">All available</option>
       </select></label>
     </div>

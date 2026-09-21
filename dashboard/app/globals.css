@@ -25,6 +25,7 @@ h2 { margin: 0 0 7px; font-size: 20px; }
 .card span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 10px; }
 .card strong { font-size: 23px; letter-spacing: -.02em; }
 .card strong.small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; padding-top: 5px; }
+.card-note { display: block; color: var(--muted); font-size: 11px; margin-top: 7px; }
 .panel { padding: 22px; }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .charts { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(220px, 1fr); gap: 20px; }
