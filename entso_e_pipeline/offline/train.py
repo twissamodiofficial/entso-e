@@ -55,13 +55,15 @@ def _validated_splits(
     return splits
 
 
-def select_training_rounds(
-    splits: dict[str, pd.DataFrame],
+def train_models(
+    selection_train: pd.DataFrame,
+    selection_validation: pd.DataFrame,
+    final_train: pd.DataFrame,
 ) -> dict[str, object]:
-    """Select point and quantile boosting rounds on the historical val split."""
+    """Select rounds, then refit fresh models on the final training window."""
 
-    selected_point = point.train(splits["train"], splits["val"])
-    selected_quantiles = quantile.train_all(splits["train"], splits["val"])
+    selected_point = point.train(selection_train, selection_validation)
+    selected_quantiles = quantile.train_all(selection_train, selection_validation)
     rounds = {
         "point": selected_point.best_iteration,
         "quantile": {
@@ -69,39 +71,18 @@ def select_training_rounds(
             for quantile_level, model in selected_quantiles.items()
         },
     }
-    return {
-        "selected_point": selected_point,
-        "selected_quantiles": selected_quantiles,
-        "rounds": rounds,
-    }
-
-
-def fit_fixed_models(
-    train: pd.DataFrame,
-    rounds: dict[str, object],
-) -> dict[str, object]:
-    """Fit final models on a chosen training window with fixed selected rounds."""
-
-    return {
-        "point": point.train(train, num_boost_round=rounds["point"]),
+    final = {
+        "point": point.train(final_train, num_boost_round=rounds["point"]),
         "quantiles": quantile.train_all(
-            train,
+            final_train,
             num_boost_round=rounds["quantile"],
         ),
     }
-
-
-def train_historical_models(
-    splits: dict[str, pd.DataFrame],
-) -> dict[str, object]:
-    """Select rounds on train/validation and refit on their combined rows."""
-
-    selection = select_training_rounds(splits)
-    combined = pd.concat([splits["train"], splits["val"]])
-    final = fit_fixed_models(combined, selection["rounds"])
     return {
-        **selection,
+        "selected_point": selected_point,
+        "selected_quantiles": selected_quantiles,
         **final,
+        "rounds": rounds,
     }
 
 
@@ -218,19 +199,21 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     historical_splits = build_splits()
-    selection = select_training_rounds(historical_splits)
-    selected = {
-        "point": selection["selected_point"],
-        "quantiles": selection["selected_quantiles"],
-    }
     if args.profile == "production":
         splits = build_splits(split_definition=config.PRODUCTION_SPLITS)
-        final = fit_fixed_models(splits["train"], selection["rounds"])
-        interval_calibration = calibrate_interval(final, splits["calibration"])
+        models = train_models(
+            historical_splits["train"],
+            historical_splits["val"],
+            splits["train"],
+        )
+        interval_calibration = calibrate_interval(models, splits["calibration"])
         metrics_report = {
-            "validation_selection": evaluate_models(selected, historical_splits["val"]),
+            "validation_selection": evaluate_models(
+                {"point": models["selected_point"], "quantiles": models["selected_quantiles"]},
+                historical_splits["val"],
+            ),
             "production_calibration": {
-                **evaluate_models(final, splits["calibration"]),
+                **evaluate_models(models, splits["calibration"]),
                 "interval": interval_calibration,
             },
         }
@@ -239,21 +222,25 @@ def main(argv=None):
         default_models_dir = str(Path(config.MODELS_DIR) / "production")
     else:
         splits = historical_splits
-        final = fit_fixed_models(
+        models = train_models(
+            splits["train"],
+            splits["val"],
             pd.concat([splits["train"], splits["val"]]),
-            selection["rounds"],
         )
-        interval_calibration = calibrate_interval(final, splits["calibration"])
+        interval_calibration = calibrate_interval(models, splits["calibration"])
         metrics_report = {
-            "validation_selection": evaluate_models(selected, splits["val"]),
+            "validation_selection": evaluate_models(
+                {"point": models["selected_point"], "quantiles": models["selected_quantiles"]},
+                splits["val"],
+            ),
             "calibration": {
-                **evaluate_models(final, splits["calibration"]),
+                **evaluate_models(models, splits["calibration"]),
                 "interval": interval_calibration,
             },
             "test": {
-                **evaluate_models(final, splits["test"]),
+                **evaluate_models(models, splits["test"]),
                 "interval": evaluate_calibrated_interval(
-                    final,
+                    models,
                     splits["test"],
                     interval_calibration["adjustment_mw"],
                 ),
@@ -264,14 +251,14 @@ def main(argv=None):
         default_models_dir = config.MODELS_DIR
 
     models_dir = args.models_dir or default_models_dir
-    save_models(final["point"], final["quantiles"], models_dir)
+    save_models(models["point"], models["quantiles"], models_dir)
     save_calibration(interval_calibration, models_dir)
     report = {
         "profile": args.profile,
         "models_dir": models_dir,
         "training_window": training_window,
         "calibration_window": calibration_window,
-        "rounds": selection["rounds"],
+        "rounds": models["rounds"],
         "metrics": metrics_report,
     }
     if args.publish_dagshub:
@@ -284,7 +271,7 @@ def main(argv=None):
         report["model"] = publish_dagshub_model(
             models_dir,
             model_version,
-            training_rounds=selection["rounds"],
+            training_rounds=models["rounds"],
             training_metrics=report["metrics"],
             store=SupabaseRawStore(),
         )
