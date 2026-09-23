@@ -47,11 +47,12 @@ h2 { margin: 0 0 7px; font-size: 20px; }
 .forecast-path, .actual-path { fill: none; stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
 .forecast-path { stroke: var(--accent); }.actual-path { stroke: var(--green); }
 .gridline { stroke: var(--line); stroke-width: 1; }.axis-label, .axis-unit { fill: var(--muted); font-size: 11px; }.axis-unit { font-size: 10px; }
-.metric-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }.metric-title { color: var(--muted); font-size: 12px; margin: 4px; }
+.metric-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }.metric-title { color: var(--muted); font-size: 12px; margin: 4px; }.metric-hover-value { color: var(--text); font-size: 12px; margin: 4px; }
 .metric-heading select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; color: var(--text); padding: 5px 7px; font-size: 11px; }
 .mape-axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; padding: 0 4px; }
 .bars { display: flex; align-items: flex-end; gap: 5px; height: 242px; overflow-x: auto; padding: 10px 4px 0; }
-.bar-wrap { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; min-width: 18px; height: 100%; gap: 7px; }
+.bar-wrap { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; min-width: 18px; height: 100%; gap: 7px; outline: none; }
+.bar-wrap:focus-visible { box-shadow: 0 0 0 2px var(--accent); border-radius: 4px; }
 .bar { width: 14px; min-height: 2px; border-radius: 4px 4px 0 0; background: var(--accent); }
 .bar-wrap small { color: var(--muted); font-size: 9px; writing-mode: vertical-rl; transform: rotate(180deg); }
 .empty { color: var(--muted); padding: 60px 0; text-align: center; }

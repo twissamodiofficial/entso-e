@@ -68,6 +68,7 @@ export default function Charts({
   onRangeChange: (range: ChartRange) => void
 }) {
   const [hovered, setHovered] = useState<number | null>(null)
+  const [hoveredMetric, setHoveredMetric] = useState<string | null>(null)
   const today = todayInAmsterdam()
 
   const selectedDates = useMemo(() => dateBounds(range, today), [range, today])
@@ -82,7 +83,10 @@ export default function Charts({
     [dailyMetrics, selectedDates],
   )
 
-  useEffect(() => setHovered(null), [range])
+  useEffect(() => {
+    setHovered(null)
+    setHoveredMetric(null)
+  }, [range])
 
   if (!forecast.length && !dailyMetrics.length) return <div className="empty">No forecast metrics have been stored yet.</div>
 
@@ -99,7 +103,7 @@ export default function Charts({
     <div className="range-heading">
       <div><strong>{selectedRangeLabel}</strong><span> · Amsterdam local dates</span></div>
       <label>Range <select value={range} onChange={(event) => onRangeChange(event.target.value as ChartRange)} aria-label="Chart date range">
-        <option value="today">Today</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="all">All available</option>
+        <option value="today">Today</option><option value="yesterday">Yesterday</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="all">All available</option>
       </select></label>
     </div>
     <div className="chart-block">
@@ -127,10 +131,26 @@ export default function Charts({
       <div className="x-axis-labels"><span>{filteredForecast[0] ? formatTime(filteredForecast[0].valid_at) : ''}</span><span>{filteredForecast.at(-1) ? formatTime(filteredForecast.at(-1)!.valid_at) : ''}</span></div>
     </div>
     <div className="chart-block metric-chart">
-      <div className="metric-heading"><div className="metric-title">Daily MAPE</div></div>
+      <div className="metric-heading">
+        <div className="metric-title">Daily MAPE</div>
+        {hoveredMetric && <div className="metric-hover-value">
+          {hoveredMetric}: {filteredMetrics.find((row) => row.valid_date === hoveredMetric)?.point_mape_percent?.toFixed(1) ?? '—'}%
+        </div>}
+      </div>
       <div className="mape-axis"><span>{maxMape.toFixed(1)}%</span><span>0%</span></div>
       {filteredMetrics.length ? <div className="bars">
-          {filteredMetrics.map((row) => <div className="bar-wrap" key={row.valid_date} title={`${row.valid_date}: ${row.point_mape_percent?.toFixed(1) ?? '—'}%`}>
+          {filteredMetrics.map((row) => <div
+            className="bar-wrap"
+            key={row.valid_date}
+            title={`${row.valid_date}: ${row.point_mape_percent?.toFixed(1) ?? '—'}%`}
+            role="img"
+            aria-label={`${row.valid_date}: ${row.point_mape_percent?.toFixed(1) ?? '—'}% MAPE`}
+            tabIndex={0}
+            onMouseEnter={() => setHoveredMetric(row.valid_date)}
+            onMouseLeave={() => setHoveredMetric(null)}
+            onFocus={() => setHoveredMetric(row.valid_date)}
+            onBlur={() => setHoveredMetric(null)}
+          >
             <div className="bar" style={{ height: `${((row.point_mape_percent ?? 0) / maxMape) * 100}%` }} />
             <small>{row.valid_date.slice(5)}</small>
           </div>)}
