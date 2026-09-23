@@ -13,6 +13,11 @@ class SupabaseStoreTests(unittest.TestCase):
         self.table = Mock()
         self.client.table.return_value = self.table
         self.table.upsert.return_value = self.table
+        self.table.select.return_value = self.table
+        self.table.eq.return_value = self.table
+        self.table.lt.return_value = self.table
+        self.table.order.return_value = self.table
+        self.table.limit.return_value = self.table
         self.table.execute.return_value = Mock(data=[])
         self.store = SupabaseRawStore(self.client, batch_size=2)
 
@@ -87,6 +92,33 @@ class SupabaseStoreTests(unittest.TestCase):
         self.assertEqual(row["evaluated_rows"], 24)
         self.assertIsInstance(row["evaluated_rows"], int)
         self.assertEqual(row["point_mae_mw"], 100.5)
+
+    def test_oldest_unreconciled_uses_newest_run_per_date(self):
+        self.table.execute.side_effect = [
+            Mock(data=[
+                {
+                    "run_id": "run-20-new",
+                    "forecast_date": "2026-09-20",
+                    "issued_at": "2026-09-20T01:00:00+00:00",
+                },
+                {
+                    "run_id": "run-20-old",
+                    "forecast_date": "2026-09-20",
+                    "issued_at": "2026-09-20T00:00:00+00:00",
+                },
+                {
+                    "run_id": "run-21",
+                    "forecast_date": "2026-09-21",
+                    "issued_at": "2026-09-21T00:00:00+00:00",
+                },
+            ]),
+            Mock(data=[{"run_id": "run-20-new"}]),
+            Mock(data=[]),
+        ]
+
+        run = self.store.oldest_unreconciled_forecast_run("2026-09-22")
+
+        self.assertEqual(run["run_id"], "run-21")
 
 
 if __name__ == "__main__":

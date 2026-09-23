@@ -277,6 +277,50 @@ class SupabaseRawStore:
         rows = response.data or []
         return rows[0] if rows else None
 
+    def oldest_unreconciled_forecast_run(
+        self,
+        before_date,
+        model_version=None,
+    ) -> dict | None:
+        """Return the oldest latest run before a date without daily metrics.
+
+        A rerun can create multiple forecast runs for one local date. Only the
+        newest run for each date is eligible, matching ``forecast_run_for_date``
+        and preventing an obsolete rerun from blocking reconciliation.
+        """
+
+        query = (
+            self.client.table("forecast_runs")
+            .select(
+                "run_id,model_version,forecast_date,issued_at,horizon_start,horizon_end"
+            )
+            .lt("forecast_date", str(before_date))
+            .order("forecast_date")
+            .order("issued_at", desc=True)
+            .limit(100)
+        )
+        if model_version is not None:
+            query = query.eq("model_version", model_version)
+        rows = query.execute().data or []
+
+        latest_by_date = {}
+        for row in rows:
+            latest_by_date.setdefault(row["forecast_date"], row)
+
+        for row in latest_by_date.values():
+            metrics = (
+                self.client.table("forecast_daily_metrics")
+                .select("run_id")
+                .eq("run_id", row["run_id"])
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if not metrics:
+                return row
+        return None
+
     def upsert_forecasts(self, run_id: str, forecasts: pd.DataFrame) -> int:
         required = {"point_forecast_mw", "q10_forecast_mw", "q50_forecast_mw", "q90_forecast_mw"}
         missing = sorted(required - set(forecasts.columns))

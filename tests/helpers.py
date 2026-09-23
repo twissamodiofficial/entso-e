@@ -11,6 +11,6 @@ def validated_transform(*args, **kwargs):
 
 
 def validated_training(*args, **kwargs):
-    result = engineering.fit_transform_train(*args, **kwargs)
+    result = engineering.build_labeled_features(*args, **kwargs)
     split_target(result[0])
     return result

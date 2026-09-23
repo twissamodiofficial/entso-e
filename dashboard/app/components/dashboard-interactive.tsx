@@ -18,6 +18,12 @@ export default function DashboardInteractive({ data }: { data: DashboardData }) 
   const evaluated = filteredForecast.filter(
     (row) => row.actual_load_mw != null && row.actual_load_mw !== 0,
   )
+  const coverageRows = filteredForecast.filter(
+    (row) =>
+      row.actual_load_mw != null &&
+      row.q10_forecast_mw != null &&
+      row.q90_forecast_mw != null,
+  )
   const rangeMape = evaluated.length
     ? evaluated.reduce(
       (total, row) => total + Math.abs((row.actual_load_mw! - row.point_forecast_mw) / row.actual_load_mw!) * 100,
@@ -25,8 +31,11 @@ export default function DashboardInteractive({ data }: { data: DashboardData }) 
     ) / evaluated.length
     : null
   const evaluatedDays = new Set(evaluated.map((row) => row.forecast_date)).size
-  const latestMetric = data.dailyMetrics[0]
-  const latestCoverage = latestMetric?.interval_coverage
+  const rangeCoverage = coverageRows.length
+    ? coverageRows.filter(
+      (row) => row.actual_load_mw! >= row.q10_forecast_mw! && row.actual_load_mw! <= row.q90_forecast_mw!,
+    ).length / coverageRows.length
+    : null
   const actualCount = data.forecast.filter((row) => row.actual_load_mw !== null).length
 
   return <>
@@ -34,7 +43,7 @@ export default function DashboardInteractive({ data }: { data: DashboardData }) 
       <article className="card"><span>Forecast date</span><strong>{data.forecastDate}</strong></article>
       <article className="card"><span>Model</span><strong className="small">{data.modelVersion}</strong></article>
       <article className="card"><span>MAPE for selected range</span><strong>{rangeMape == null ? '—' : `${percent.format(rangeMape)}%`}</strong><small className="card-note">{evaluatedDays} completed day{evaluatedDays === 1 ? '' : 's'} · {evaluated.length} rows</small></article>
-      <article className="card"><span>Interval coverage</span><strong>{latestCoverage == null ? '—' : `${percent.format(latestCoverage * 100)}%`}</strong></article>
+      <article className="card"><span>Interval coverage for selected range</span><strong>{rangeCoverage == null ? '—' : `${percent.format(rangeCoverage * 100)}%`}</strong><small className="card-note">{coverageRows.length} evaluated rows</small></article>
     </section>
 
     <section className="panel">

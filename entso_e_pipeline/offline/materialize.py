@@ -26,7 +26,7 @@ def main(argv=None):
         end=spec.test_end,
     )
     weather = preprocessing.prepare_weather(raw_weather)
-    features, _, _ = engineering.fit_transform_train(load, weather)
+    features, _, _ = engineering.build_labeled_features(load, weather)
 
     print(json.dumps({
         "hourly_load_rows": store.upsert_hourly_load(load),

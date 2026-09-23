@@ -66,10 +66,10 @@ def _append_weather(
     return pd.concat([features, aligned_weather], axis=1)
 
 
-def fit_transform_train(
+def build_labeled_features(
     load_train: pd.DataFrame, weather_train: pd.DataFrame = None
 ):
-    """Build a labeled feature frame from preprocessed hourly observations.
+    """Build causal features and attach labels for historical observations.
 
     Build each day using only prior actuals, then attach that day's labels.
     The transformers are stateless. A partial initial history day is

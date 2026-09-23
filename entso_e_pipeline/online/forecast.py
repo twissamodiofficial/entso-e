@@ -12,7 +12,7 @@ from ..features import engineering
 from ..storage.supabase import SupabaseRawStore
 from ..time_utils import as_local, local_day_hours
 from ..serving.model import load_dagshub_model, load_local_model
-from .ingest import ingest_load_catchup, ingest_weather_window
+from .ingest import ensure_forecast_history, ingest_weather_window
 
 
 def run_forecast(
@@ -32,7 +32,7 @@ def run_forecast(
     history_start = forecast_start - pd.DateOffset(days=config.LOOKBACK_DAYS)
     store = store or SupabaseRawStore()
 
-    load_rows = ingest_load_catchup(forecast_start, store)
+    load_rows = ensure_forecast_history(forecast_start, store)
     weather_rows = ingest_weather_window(forecast_start, horizon_end, store)
 
     load = preprocessing.prepare_load(

@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pandas as pd
 
 from entso_e_pipeline import config
-from entso_e_pipeline.online.ingest import ingest_load_catchup
+from entso_e_pipeline.online.ingest import ensure_actual_day, ensure_forecast_history
 
 
 class MemoryStore:
@@ -46,7 +46,7 @@ class OnlineIngestTests(unittest.TestCase):
             return hourly_load(start, end, value=110.0)
 
         with patch("entso_e_pipeline.online.ingest.fetch_load", fetch):
-            rows = ingest_load_catchup(reference, store)
+            rows = ensure_forecast_history(reference, store)
 
         self.assertEqual(rows, 48)
         self.assertEqual(calls, [(missing_day, reference)])
@@ -57,7 +57,7 @@ class OnlineIngestTests(unittest.TestCase):
         store = MemoryStore(hourly_load(history_start, reference))
 
         with patch("entso_e_pipeline.online.ingest.fetch_load") as fetch:
-            self.assertEqual(ingest_load_catchup(reference, store), 0)
+            self.assertEqual(ensure_forecast_history(reference, store), 0)
 
         fetch.assert_not_called()
 
@@ -71,7 +71,25 @@ class OnlineIngestTests(unittest.TestCase):
             return_value=pd.DataFrame({config.TARGET: []}),
         ):
             with self.assertRaisesRegex(RuntimeError, "still incomplete"):
-                ingest_load_catchup(reference, store)
+                ensure_forecast_history(reference, store)
+
+    def test_actual_day_fetches_only_the_completed_day(self):
+        day = pd.Timestamp("2026-01-10", tz=config.TIMEZONE)
+        store = MemoryStore(hourly_load(day, day + pd.DateOffset(days=1)).iloc[:12])
+        calls = []
+
+        def fetch(start, end):
+            calls.append((start, end))
+            return hourly_load(start, end, value=110.0)
+
+        with patch("entso_e_pipeline.online.ingest.fetch_load", fetch):
+            rows = ensure_actual_day(day, store)
+
+        self.assertEqual(rows, 24)
+        self.assertEqual(
+            calls,
+            [(day, day + pd.DateOffset(days=1))],
+        )
 
 
 if __name__ == "__main__":

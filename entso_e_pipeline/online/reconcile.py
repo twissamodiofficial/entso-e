@@ -11,21 +11,31 @@ from .. import config, preprocessing
 from ..modeling import metrics
 from ..storage.supabase import SupabaseRawStore
 from ..time_utils import as_local, local_day_hours
-from .ingest import ingest_load_catchup
+from .ingest import ensure_actual_day
 
 
 def reconcile_forecast(forecast_date=None, *, store=None, model_version=None) -> dict:
-    forecast_day = as_local(
-        forecast_date or pd.Timestamp.now(tz=config.TIMEZONE) - pd.DateOffset(days=1),
-        config.TIMEZONE,
-    ).normalize()
     store = store or SupabaseRawStore()
-    run = store.forecast_run_for_date(forecast_day.date(), model_version)
-    if not run:
-        raise ValueError(f"No forecast run found for {forecast_day.date()}.")
+    if forecast_date is None:
+        today = pd.Timestamp.now(tz=config.TIMEZONE).normalize()
+        run = store.oldest_unreconciled_forecast_run(
+            today.date(),
+            model_version,
+        )
+        if not run:
+            return {
+                "status": "nothing_to_reconcile",
+                "evaluated_rows": 0,
+            }
+        forecast_day = as_local(run["forecast_date"], config.TIMEZONE).normalize()
+    else:
+        forecast_day = as_local(forecast_date, config.TIMEZONE).normalize()
+        run = store.forecast_run_for_date(forecast_day.date(), model_version)
+        if not run:
+            raise ValueError(f"No forecast run found for {forecast_day.date()}.")
 
     actual_end = forecast_day + pd.DateOffset(days=1)
-    ingest_load_catchup(actual_end, store)
+    ensure_actual_day(forecast_day, store)
     actual = preprocessing.prepare_load(
         store.load(forecast_day, actual_end),
         start=forecast_day,

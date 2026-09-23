@@ -231,7 +231,7 @@ definitions keep these columns consistent across training and prediction.
 
 ## 9. Final validation, training, and predictions
 
-`fit_transform_train` runs the same daily feature path for every eligible day
+`build_labeled_features` runs the same daily feature path for every eligible day
 and attaches preprocessed hourly `Actual Load` labels afterward. It discards the
 initial seven full local days used for history. A partial initial day is excluded
 from that lookback. Both feature transformers are stateless.
@@ -303,10 +303,12 @@ the forecast-day weather, materializes the live hourly/features rows, loads the
 newest model bundle from DagsHub MLflow, and stores the forecast run and
 calibrated q10/q50/q90 values in Supabase.
 
-`online.reconcile` runs after a forecast day closes. It ingests the completed
-actual load, attaches actuals to the stored forecast values, and writes daily
-MAE, MAPE, pinball loss, and interval coverage. If required actual history is
-unavailable, reconciliation fails without fabricating values.
+`online.reconcile` runs after forecast days close. With no explicit date, it
+selects the oldest latest forecast run without daily metrics, ingests the
+completed actual load, attaches actuals to the stored forecast values, and
+writes daily MAE, MAPE, pinball loss, and interval coverage. If required actual
+history is unavailable, reconciliation fails without fabricating values and the
+workflow retries it later.
 
 The GitHub Actions schedule uses `Europe/Amsterdam`, so daylight-saving
 changes do not require separate UTC cron entries. A manual dispatch should be

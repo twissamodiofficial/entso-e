@@ -12,7 +12,7 @@ from entsoe import EntsoePandasClient
 
 from .. import config, preprocessing
 from ..modeling import metrics, point
-from ..modeling.schema import split_target
+from ..modeling.schema import validate_features
 from ..storage.supabase import SupabaseRawStore
 from ..time_utils import as_local, as_local_index
 
@@ -74,7 +74,8 @@ def compare(
     test_frame = features.loc[
         (features.index >= start) & (features.index < end)
     ]
-    model_features, _ = split_target(test_frame, "Model test data")
+    model_features = test_frame.drop(columns=[config.TARGET])
+    validate_features(model_features)
     our_prediction = point.predict(point.load(f"{models_dir}/lightgbm_v1.txt"), model_features)
 
     entsoe_actual = _hourly(

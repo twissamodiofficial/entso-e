@@ -55,15 +55,14 @@ def _validated_splits(
     return splits
 
 
-def train_models(
-    selection_train: pd.DataFrame,
-    selection_validation: pd.DataFrame,
-    final_train: pd.DataFrame,
+def select_training_rounds(
+    train: pd.DataFrame,
+    validation: pd.DataFrame,
 ) -> dict[str, object]:
-    """Select rounds, then refit fresh models on the final training window."""
+    """Choose boosting rounds with early stopping on train/validation data."""
 
-    selected_point = point.train(selection_train, selection_validation)
-    selected_quantiles = quantile.train_all(selection_train, selection_validation)
+    selected_point = point.train(train, validation)
+    selected_quantiles = quantile.train_all(train, validation)
     rounds = {
         "point": selected_point.best_iteration,
         "quantile": {
@@ -71,18 +70,78 @@ def train_models(
             for quantile_level, model in selected_quantiles.items()
         },
     }
-    final = {
-        "point": point.train(final_train, num_boost_round=rounds["point"]),
+    return {
+        "point": selected_point,
+        "quantiles": selected_quantiles,
+        "rounds": rounds,
+    }
+
+
+def fit_models(
+    train: pd.DataFrame,
+    rounds: dict[str, object],
+) -> dict[str, object]:
+    """Fit fresh point and quantile models using saved boosting rounds."""
+
+    return {
+        "point": point.train(train, num_boost_round=rounds["point"]),
         "quantiles": quantile.train_all(
-            final_train,
+            train,
             num_boost_round=rounds["quantile"],
         ),
     }
+
+
+def save_training_config(
+    rounds: dict[str, object],
+    models_dir: str | Path = config.MODELS_DIR,
+) -> None:
+    """Save selected training settings for later production refits."""
+
+    path = Path(models_dir)
+    path.mkdir(parents=True, exist_ok=True)
+    serializable_rounds = {
+        "point": int(rounds["point"]),
+        "quantile": {
+            str(level): int(value)
+            for level, value in rounds["quantile"].items()
+        },
+    }
+    (path / "training_config.json").write_text(json.dumps({
+        "config_version": 1,
+        "feature_version": config.FEATURE_VERSION,
+        "processing_version": config.PROCESSING_VERSION,
+        "rounds": serializable_rounds,
+        "selection_window": {
+            "train_end": "2026-01-01",
+            "validation_start": "2026-01-01",
+            "validation_end": "2026-04-01",
+        },
+        "created_at": pd.Timestamp.now(tz="UTC").isoformat(),
+    }, indent=2) + "\n")
+
+
+def load_training_config(path: str | Path) -> dict[str, object]:
+    """Load and validate saved settings for a production refit."""
+
+    payload = json.loads(Path(path).read_text())
+    if payload.get("config_version") != 1:
+        raise ValueError("Unsupported training config version.")
+    if payload.get("feature_version") != config.FEATURE_VERSION:
+        raise ValueError("Training config feature version does not match the code.")
+    if payload.get("processing_version") != config.PROCESSING_VERSION:
+        raise ValueError("Training config processing version does not match the code.")
+    rounds = payload.get("rounds", {})
+    quantile_rounds = rounds.get("quantile", {})
     return {
-        "selected_point": selected_point,
-        "selected_quantiles": selected_quantiles,
-        **final,
-        "rounds": rounds,
+        **payload,
+        "rounds": {
+            "point": int(rounds["point"]),
+            "quantile": {
+                float(level): int(quantile_rounds[str(level)])
+                for level in config.QUANTILES
+            },
+        },
     }
 
 
@@ -181,14 +240,9 @@ def save_calibration(
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--profile",
-        choices=("historical", "production"),
-        default="historical",
-        help="Historical evaluation workflow or production refit through June 30.",
-    )
-    parser.add_argument(
         "--models-dir",
-        help="Output directory; production defaults to models/production.",
+        default=config.MODELS_DIR,
+        help="Output directory for the offline model bundle.",
     )
     parser.add_argument(
         "--publish-dagshub",
@@ -198,80 +252,49 @@ def main(argv=None):
     parser.add_argument("--model-version")
     args = parser.parse_args(argv)
 
-    historical_splits = build_splits()
-    if args.profile == "production":
-        splits = build_splits(split_definition=config.PRODUCTION_SPLITS)
-        models = train_models(
-            historical_splits["train"],
-            historical_splits["val"],
-            splits["train"],
-        )
-        interval_calibration = calibrate_interval(models, splits["calibration"])
-        metrics_report = {
-            "validation_selection": evaluate_models(
-                {"point": models["selected_point"], "quantiles": models["selected_quantiles"]},
-                historical_splits["val"],
+    splits = build_splits()
+    selection = select_training_rounds(splits["train"], splits["val"])
+    final = fit_models(
+        pd.concat([splits["train"], splits["val"]]),
+        selection["rounds"],
+    )
+    interval_calibration = calibrate_interval(final, splits["calibration"])
+    metrics_report = {
+        "calibration": {
+            **evaluate_models(final, splits["calibration"]),
+            "interval": interval_calibration,
+        },
+        "test": {
+            **evaluate_models(final, splits["test"]),
+            "interval": evaluate_calibrated_interval(
+                final,
+                splits["test"],
+                interval_calibration["adjustment_mw"],
             ),
-            "production_calibration": {
-                **evaluate_models(models, splits["calibration"]),
-                "interval": interval_calibration,
-            },
-        }
-        training_window = {"start": "2019-01-01", "end": "2026-07-01"}
-        calibration_window = {"start": "2026-07-01", "end": "2026-09-16"}
-        default_models_dir = str(Path(config.MODELS_DIR) / "production")
-    else:
-        splits = historical_splits
-        models = train_models(
-            splits["train"],
-            splits["val"],
-            pd.concat([splits["train"], splits["val"]]),
-        )
-        interval_calibration = calibrate_interval(models, splits["calibration"])
-        metrics_report = {
-            "validation_selection": evaluate_models(
-                {"point": models["selected_point"], "quantiles": models["selected_quantiles"]},
-                splits["val"],
-            ),
-            "calibration": {
-                **evaluate_models(models, splits["calibration"]),
-                "interval": interval_calibration,
-            },
-            "test": {
-                **evaluate_models(models, splits["test"]),
-                "interval": evaluate_calibrated_interval(
-                    models,
-                    splits["test"],
-                    interval_calibration["adjustment_mw"],
-                ),
-            },
-        }
-        training_window = {"start": "2019-01-01", "end": "2026-04-01"}
-        calibration_window = {"start": "2026-04-01", "end": "2026-07-01"}
-        default_models_dir = config.MODELS_DIR
-
-    models_dir = args.models_dir or default_models_dir
-    save_models(models["point"], models["quantiles"], models_dir)
-    save_calibration(interval_calibration, models_dir)
+        },
+    }
+    save_training_config(selection["rounds"], args.models_dir)
+    save_models(final["point"], final["quantiles"], args.models_dir)
+    save_calibration(interval_calibration, args.models_dir)
     report = {
-        "profile": args.profile,
-        "models_dir": models_dir,
-        "training_window": training_window,
-        "calibration_window": calibration_window,
-        "rounds": models["rounds"],
+        "profile": "historical",
+        "models_dir": args.models_dir,
+        "training_window": {"start": "2019-01-01", "end": "2026-04-01"},
+        "calibration_window": {"start": "2026-04-01", "end": "2026-07-01"},
+        "rounds": selection["rounds"],
         "metrics": metrics_report,
     }
     if args.publish_dagshub:
         from ..serving.model import publish_dagshub_model
 
         model_version = args.model_version or (
-            f"load-forecast-{args.profile}-"
+            "load-forecast-offline-"
             + pd.Timestamp.now(tz="UTC").strftime("%Y%m%dT%H%M%SZ")
         )
         report["model"] = publish_dagshub_model(
-            models_dir,
+            args.models_dir,
             model_version,
-            training_rounds=models["rounds"],
+            training_rounds=selection["rounds"],
             training_metrics=report["metrics"],
             store=SupabaseRawStore(),
         )

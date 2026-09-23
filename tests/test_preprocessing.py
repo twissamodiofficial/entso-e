@@ -94,7 +94,7 @@ class PreprocessingTests(unittest.TestCase):
         index = pd.date_range("2026-01-01", periods=240, freq="h", tz=config.TIMEZONE)
         raw = pd.DataFrame({config.TARGET: 100.}, index=index).drop(index[200])
         load = preprocessing.prepare_load(raw)
-        frame, _, _ = engineering.fit_transform_train(load)
+        frame, _, _ = engineering.build_labeled_features(load)
         self.assertEqual(len(frame), 72)
         self.assertTrue(pd.isna(frame.loc[index[200], config.TARGET]))
         with self.assertRaisesRegex(ValueError, "missing values"):
@@ -106,7 +106,9 @@ class PreprocessingTests(unittest.TestCase):
         raw_weather = pd.DataFrame({name: 10. for name in config.WEATHER_FEATURES}, index=index).drop(index[200])
         raw_weather.iloc[201, 0] = np.inf
         weather = preprocessing.prepare_weather(raw_weather)
-        frame, _, _ = engineering.fit_transform_train(preprocessing.prepare_load(raw_load), weather)
+        frame, _, _ = engineering.build_labeled_features(
+            preprocessing.prepare_load(raw_load), weather
+        )
         self.assertTrue(frame.loc[index[200], config.WEATHER_FEATURES].isna().all())
         with self.assertRaisesRegex(ValueError, "missing values"):
             split_target(frame)

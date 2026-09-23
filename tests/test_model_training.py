@@ -114,7 +114,7 @@ class ModelTrainingTests(unittest.TestCase):
         )
         load = preprocessing.prepare_load(raw_load)
         weather = preprocessing.prepare_weather(raw_weather)
-        frame, _, _ = engineering.fit_transform_train(load, weather)
+        frame, _, _ = engineering.build_labeled_features(load, weather)
         horizon = local_day_hours("2026-10-25", config.TIMEZONE)
         train = frame.loc[frame.index < horizon[0]]
         val = frame.loc[horizon]
@@ -139,7 +139,7 @@ class ModelTrainingTests(unittest.TestCase):
             {"apparent_temperature": 10., "dew_point_2m": 5.},
             index=index.append(horizon),
         )
-        train, load_transformer, dtf = engineering.fit_transform_train(load.iloc[:480], weather)
+        train, load_transformer, dtf = engineering.build_labeled_features(load.iloc[:480], weather)
         val_features = pd.concat([
             engineering.transform(
                 load, local_day_hours(day, config.TIMEZONE), load_transformer, dtf, weather

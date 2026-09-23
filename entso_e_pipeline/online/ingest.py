@@ -18,15 +18,6 @@ def ingest_load_window(start, end, store: SupabaseRawStore | None = None) -> int
     return store.upsert_load(fetch_load(start, end))
 
 
-def ingest_previous_day_load(
-    reference_date=None,
-    store: SupabaseRawStore | None = None,
-) -> int:
-    """Ensure the seven-day history before a forecast date exists."""
-
-    return ingest_load_catchup(reference_date, store)
-
-
 def _missing_history_days(
     store: SupabaseRawStore,
     start: pd.Timestamp,
@@ -49,11 +40,34 @@ def _missing_history_days(
     return missing
 
 
-def ingest_load_catchup(
+def _ensure_complete_days(
+    store: SupabaseRawStore,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    description: str,
+) -> int:
+    """Fetch missing local days in a half-open window and verify completeness."""
+
+    missing = _missing_history_days(store, start, end)
+    if not missing:
+        return 0
+
+    fetched_rows = ingest_load_window(missing[0], end, store)
+    remaining = _missing_history_days(store, start, end)
+    if remaining:
+        dates = ", ".join(day.date().isoformat() for day in remaining)
+        raise RuntimeError(
+            f"{description} is still incomplete after catch-up; "
+            f"missing Amsterdam days: {dates}"
+        )
+    return fetched_rows
+
+
+def ensure_forecast_history(
     reference_date=None,
     store: SupabaseRawStore | None = None,
 ) -> int:
-    """Catch up all missing load days needed before a forecast date.
+    """Ensure the seven-day load history needed before a forecast date.
 
     Supabase is the availability watermark. The source API is queried from the
     first missing Amsterdam day through the cutoff, not just for the previous
@@ -67,19 +81,29 @@ def ingest_load_catchup(
     ).normalize()
     history_start = reference - pd.DateOffset(days=config.LOOKBACK_DAYS)
     store = store or SupabaseRawStore()
-    missing = _missing_history_days(store, history_start, reference)
-    if not missing:
-        return 0
+    return _ensure_complete_days(
+        store,
+        history_start,
+        reference,
+        "Required load history",
+    )
 
-    fetched_rows = ingest_load_window(missing[0], reference, store)
-    remaining = _missing_history_days(store, history_start, reference)
-    if remaining:
-        dates = ", ".join(day.date().isoformat() for day in remaining)
-        raise RuntimeError(
-            "Required load history is still incomplete after catch-up; "
-            f"missing Amsterdam days: {dates}"
-        )
-    return fetched_rows
+
+def ensure_actual_day(
+    forecast_date,
+    store: SupabaseRawStore | None = None,
+) -> int:
+    """Ensure that the completed forecast day has every hourly actual."""
+
+    day = as_local(forecast_date, config.TIMEZONE).normalize()
+    end = day + pd.DateOffset(days=1)
+    store = store or SupabaseRawStore()
+    return _ensure_complete_days(
+        store,
+        day,
+        end,
+        "Actual load",
+    )
 
 
 def ingest_weather_window(start, end, store: SupabaseRawStore | None = None) -> int:

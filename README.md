@@ -60,20 +60,21 @@ Populate the derived tables from the stored raw data with:
 python3 -m entso_e_pipeline.offline.materialize
 ```
 
-For live ingestion, `ingest_previous_day_load(reference_date)` uses the stored
+For live ingestion, `ensure_forecast_history(reference_date)` uses the stored
 Supabase history as its availability watermark. It checks the seven Amsterdam
 calendar days before the forecast date, fetches from the first missing day
 through the cutoff, and raises an error if any required hourly day remains
-incomplete. An API outage therefore delays a forecast instead of silently
-breaking its 168-hour lookback.
+incomplete. `ensure_actual_day(forecast_date)` applies the same validation to
+only the completed forecast day during reconciliation. An API outage therefore
+delays the relevant operation instead of silently accepting incomplete data.
 
 ## Live forecasting
 
-Publish a trained model bundle to DagsHub MLflow and register its artifact URI
-in Supabase:
+After the offline training step has saved `models/training_config.json`, refit
+and publish the production bundle to DagsHub MLflow:
 
 ```sh
-python3 -m entso_e_pipeline.offline.train --publish-dagshub
+python3 -m entso_e_pipeline.offline.production --publish-dagshub
 ```
 
 This uses the existing master-branch convention:
@@ -95,7 +96,9 @@ python3 -m entso_e_pipeline.online.reconcile
 
 The GitHub Actions workflow at
 `.github/workflows/live-forecast.yml` runs reconciliation and forecasting in
-Amsterdam time. Configure its Supabase, ENTSO-E, and `DAGSHUB_USER_TOKEN` secrets
+Amsterdam time. Reconciliation processes the oldest forecast run without daily
+metrics and retries while actuals settle, so a delayed source does not silently
+lose a day. Configure its Supabase, ENTSO-E, and `DAGSHUB_USER_TOKEN` secrets
 before enabling the schedule; use manual dispatch for the first run.
 
 
@@ -170,7 +173,7 @@ hours are averaged, and a nonexistent spring reference hour uses the mean of
 Actual rows and predictions retain all 23, 24, or 25 hourly instants. This DST
 lookup policy does not fill missing source observations.
 
-`fit_transform_train(load, weather)` constructs each eligible day through that
+`build_labeled_features(load, weather)` constructs each eligible day through that
 same feature path and attaches hourly labels. The first seven full local days
 are history; an initial partial day is excluded from the lookback. Missing
 features and labels remain visible for final validation.
@@ -200,27 +203,26 @@ python3 -m entso_e_pipeline.offline.train
 ```
 
 It selects rounds using train/validation, refits on both with fixed rounds, and
-saves the point and quantile models under `models/`. It also prints MAE and MAPE
-for the validation selection models and for the final models on calibration and
-test. Calibration and test stay out of fitting and early stopping. The q10–q90
+saves the point and quantile models under `models/`, together with
+`models/training_config.json`. It also prints MAE and MAPE for the final models
+on calibration and test. Calibration and test stay out of fitting and early
+stopping. The q10–q90
 interval is widened using calibration only, then evaluated on untouched test
 data. `PRODUCTION_SPLITS` describes a later fit through June with
 July–September calibration.
 
 The historical model remains available under `models/`. To create the separate
-production bundle, refit through June 30, and publish that bundle to DagsHub
-without overwriting the historical files, run:
+production bundle, load the saved training configuration, refit through June 30,
+and publish that bundle to DagsHub without overwriting the historical files, run:
 
 ```sh
-python3 -m entso_e_pipeline.offline.train \
-  --profile production \
-  --publish-dagshub
+python3 -m entso_e_pipeline.offline.production --publish-dagshub
 ```
 
-Production defaults to `models/production/` and uses the historical
-train/validation split only to select boosting rounds. It then refits on all
-training rows through `2026-06-30` and calibrates the interval on the
-July–September production calibration window.
+Production defaults to `models/production/`, uses the rounds saved by the
+offline run, refits on all training rows through `2026-06-30`, and calibrates
+the interval on the July–September production calibration window. It does not
+rerun round selection.
 
 To compare the saved point model with ENTSO-E's point forecast on the same test
 window, run the local-only benchmark:
